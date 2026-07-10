@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ИИ-ассистент Райтек</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  body { background: #f0f0ee; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+  .app { width: 700px; height: 640px; border: 1px solid #e0e0dc; border-radius: 14px; overflow: hidden; background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,0.08); display: flex; flex-direction: column; }
+  .topbar { padding: 14px 20px; border-bottom: 1px solid #e0e0dc; background: #f7f7f5; display: flex; align-items: center; justify-content: space-between; }
+  .topbar-title { font-size: 15px; font-weight: 600; color: #1a1a18; }
+  .topbar-sub { font-size: 12px; color: #9a9a96; margin-top: 2px; }
+  .badge { font-size: 11px; padding: 3px 9px; border-radius: 20px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+  .messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .msg-bot, .msg-user { display: flex; gap: 10px; max-width: 85%; }
+  .msg-user { align-self: flex-end; flex-direction: row-reverse; }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 13px; }
+  .avatar-bot { background: #eff6ff; color: #2563eb; }
+  .avatar-user { background: #f7f7f5; border: 1px solid #e0e0dc; color: #5a5a56; }
+  .bubble { padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.55; white-space: pre-line; }
+  .bubble-bot { background: #f7f7f5; border: 1px solid #e0e0dc; color: #1a1a18; }
+  .bubble-user { background: #2563eb; color: #fff; }
+  .sources { margin-top: 7px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .source-tag { font-size: 11px; padding: 3px 9px; border-radius: 20px; background: #f0f0ee; border: 1px solid #e0e0dc; color: #5a5a56; }
+  .input-area { padding: 14px 20px; border-top: 1px solid #e0e0dc; background: #f7f7f5; }
+  .input-row { display: flex; gap: 8px; }
+  .input-row input { flex: 1; height: 38px; border-radius: 8px; border: 1px solid #e0e0dc; padding: 0 14px; font-size: 13px; outline: none; }
+  .input-row input:focus { border-color: #2563eb; }
+  .input-row button { width: 38px; height: 38px; border-radius: 8px; background: #2563eb; border: none; color: #fff; cursor: pointer; font-size: 16px; }
+  .input-row button:hover { background: #1d4ed8; }
+  .input-row button:disabled { background: #c8c8c4; cursor: not-allowed; }
+  .thinking { display: flex; align-items: center; gap: 5px; padding: 10px 0; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: #9a9a96; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="topbar">
+    <div>
+      <div class="topbar-title">ИИ-ассистент Райтек</div>
+      <div class="topbar-sub">База знаний: Корпоративная база Райтек (141 статья)</div>
+    </div>
+    <span class="badge">● Онлайн</span>
+  </div>
+
+  <div class="messages" id="messages">
+    <div class="msg-bot">
+      <div class="avatar avatar-bot">🤖</div>
+      <div class="bubble bubble-bot">Привет! Я ИИ-ассистент компании Райтек. Задайте вопрос по кадровым вопросам, обучению, ИТ или другим рабочим темам — я найду ответ в базе знаний.</div>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div class="input-row">
+      <input type="text" id="input" placeholder="Напишите вопрос..." onkeydown="if(event.key==='Enter') sendMessage()">
+      <button id="sendBtn" onclick="sendMessage()">➤</button>
+    </div>
+  </div>
+</div>
+
+<script>
+async function sendMessage() {
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('sendBtn');
+  const question = input.value.trim();
+  if (!question) return;
+
+  input.value = '';
+  input.disabled = true;
+  sendBtn.disabled = true;
+
+  addUserMessage(question);
+  const thinkingId = showThinking();
+
+  try {
+    const response = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question })
+    });
+    const data = await response.json();
+    removeThinking(thinkingId);
+
+    if (data.error) {
+      addBotMessage('Произошла ошибка: ' + data.error, []);
+    } else {
+      addBotMessage(data.answer, data.sources || []);
+    }
+  } catch (err) {
+    removeThinking(thinkingId);
+    addBotMessage('Не удалось связаться с сервером. Попробуйте ещё раз.', []);
+  }
+
+  input.disabled = false;
+  sendBtn.disabled = false;
+  input.focus();
+}
+
+function addUserMessage(text) {
+  const messages = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg-user';
+  div.innerHTML = `<div class="bubble bubble-user">${escapeHtml(text)}</div><div class="avatar avatar-user">Я</div>`;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function addBotMessage(text, sources) {
+  const messages = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg-bot';
+  let sourcesHtml = '';
+  if (sources && sources.length) {
+    sourcesHtml = '<div class="sources">' + sources.map(s => `<span class="source-tag">📄 ${escapeHtml(s)}</span>`).join('') + '</div>';
+  }
+  div.innerHTML = `<div class="avatar avatar-bot">🤖</div><div><div class="bubble bubble-bot">${escapeHtml(text)}</div>${sourcesHtml}</div>`;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function showThinking() {
+  const messages = document.getElementById('messages');
+  const div = document.createElement('div');
+  const id = 'thinking-' + Date.now();
+  div.id = id;
+  div.className = 'msg-bot';
+  div.innerHTML = `<div class="avatar avatar-bot">🤖</div><div class="thinking"><span class="dot"></span><span class="dot" style="animation-delay:0.2s"></span><span class="dot" style="animation-delay:0.4s"></span></div>`;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+  return id;
+}
+
+function removeThinking(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>
