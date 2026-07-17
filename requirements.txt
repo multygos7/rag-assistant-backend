@@ -2,3 +2,6 @@ flask
 supabase
 gigachat
 gunicorn
+requests
+pypdf
+python-docx
