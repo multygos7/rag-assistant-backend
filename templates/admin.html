@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Админ-панель — ИИ-ассистент Райтек</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --ink: #0a0a0a; --ink-line: #262624; --ink-muted: #8f8d87;
+    --paper: #faf9f7; --surface: #f0efea; --line: #e2e0d9;
+    --text: #171614; --text-muted: #78766f;
+    --accent: #3b4cf0; --accent-soft: #e8eafe;
+    --success: #1f9d55; --success-soft: #e6f6ec;
+    --danger: #e0483a; --danger-soft: #fbe9e7;
+    --amber: #d9821b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: var(--ink); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+
+  .sidebar { width: 240px; flex-shrink: 0; background: var(--ink); color: #fff; display: flex; flex-direction: column; height: 100%; }
+  .sidebar-logo { padding: 20px 20px 16px; display: flex; align-items: center; gap: 10px; }
+  .sidebar-logo img { height: 20px; }
+  .sidebar-logo-tag { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--ink-muted); letter-spacing: 0.06em; text-transform: uppercase; border-left: 1px solid var(--ink-line); padding-left: 9px; }
+  .nav-section { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.06em; padding: 14px 20px 6px; }
+  .nav-item { display: flex; align-items: center; gap: 9px; padding: 9px 20px; font-size: 13px; color: #d5d4cf; cursor: pointer; transition: background 0.12s; }
+  .nav-item:hover { background: #16161a; }
+  .nav-item.active { background: #1a1c2e; color: #fff; }
+  .nav-item .flag { width: 6px; height: 6px; background: var(--ink-muted); clip-path: polygon(30% 0%, 100% 0%, 70% 100%, 0% 100%); flex-shrink: 0; }
+  .nav-item.active .flag { background: var(--accent); }
+  .sidebar-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--ink-line); font-size: 12px; color: var(--ink-muted); }
+  .back-link { color: var(--accent); text-decoration: none; font-size: 12.5px; }
+
+  .main { flex: 1; display: flex; flex-direction: column; background: var(--paper); height: 100%; overflow-y: auto; }
+  .topbar { padding: 20px 32px; border-bottom: 1px solid var(--line); background: #fff; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 5; }
+  .topbar-title { font-family: 'Space Grotesk', sans-serif; font-size: 19px; font-weight: 600; }
+  .period-select { font-size: 12.5px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
+
+  .content { padding: 28px 32px; }
+  .section-title { font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; margin-bottom: 14px; margin-top: 30px; }
+  .section-title:first-child { margin-top: 0; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .stat-card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .stat-label { font-size: 11.5px; color: var(--text-muted); margin-bottom: 8px; }
+  .stat-value { font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 600; }
+  .stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .panel { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .panel-title { font-size: 12.5px; font-weight: 600; margin-bottom: 14px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .chart-wrap { position: relative; height: 220px; }
+  .chart-wrap.small { height: 190px; }
+
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; font-size: 12.5px; }
+  .bar-label { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { width: 90px; flex-shrink: 0; height: 7px; background: var(--surface); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+  .bar-count { width: 26px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); color: var(--text-muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:hover td { background: var(--surface); }
+  .badge { font-size: 10.5px; padding: 2px 8px; border-radius: 20px; display: inline-block; }
+  .badge.ok { background: var(--success-soft); color: var(--success); }
+  .badge.miss { background: var(--danger-soft); color: var(--danger); }
+  .q-cell { max-width: 260px; }
+  .empty-note { color: var(--text-muted); font-size: 13px; padding: 20px; text-align: center; }
+  .off-topic-list { max-height: 260px; overflow-y: auto; }
+  .off-topic-item { font-size: 12.5px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .off-topic-item:last-child { border-bottom: none; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <img src="/static/logo.png" alt="Райтек">
+    <span class="sidebar-logo-tag">Админ-панель</span>
+  </div>
+  <div class="nav-section">Разделы</div>
+  <div class="nav-item active"><span class="flag"></span> Дашборд</div>
+  <div class="sidebar-footer">
+    <a href="/" class="back-link">← Вернуться к чату</a>
+  </div>
+</div>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">Статистика и логи</div>
+    <select class="period-select" id="periodSelect">
+      <option value="7">За 7 дней</option>
+      <option value="30" selected>За 30 дней</option>
+      <option value="90">За 90 дней</option>
+      <option value="3650">За всё время</option>
+    </select>
+  </div>
+
+  <div class="content" id="content">
+    <div class="empty-note">Загрузка...</div>
+  </div>
+</div>
+
+<script>
+let charts = {};
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+const CHART_COLORS = ['#3b4cf0', '#1f9d55', '#d9821b', '#e0483a', '#8f8d87', '#7c3aed'];
+
+async function apiGet(url) {
+  const res = await fetch(url);
+  if (res.status === 401) { window.location.href = '/'; return null; }
+  if (res.status === 403) { return 'forbidden'; }
+  return await res.json();
+}
+
+function modeLabel(mode) {
+  return { kb_only: 'По базе знаний', combined: 'Комбинированный', external: 'Внешняя LLM' }[mode] || mode || '—';
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text == null ? '' : String(text);
+  return div.innerHTML;
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDayLabel(dayStr) {
+  const d = new Date(dayStr);
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+}
+
+function renderBarsHtml(dict, total) {
+  const entries = Object.entries(dict).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return '<div class="empty-note">Нет данных</div>';
+  return entries.map(([label, count]) => {
+    const pct = total ? Math.round(count / total * 100) : 0;
+    return `<div class="bar-row"><div class="bar-label">${escapeHtml(label)}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div><div class="bar-count">${count}</div></div>`;
+  }).join('');
+}
+
+async function render() {
+  const days = document.getElementById('periodSelect').value;
+  const [stats, logs, sources, timeseries, topDocs] = await Promise.all([
+    apiGet(`/api/admin/stats?days=${days}`),
+    apiGet('/api/admin/logs?limit=50'),
+    apiGet('/api/admin/sources'),
+    apiGet(`/api/admin/timeseries?days=${days}`),
+    apiGet(`/api/admin/top_documents?days=${days}`),
+  ]);
+
+  if (stats === 'forbidden' || stats === null) {
+    document.getElementById('content').innerHTML = '<div class="empty-note">Доступ только для администраторов</div>';
+    return;
+  }
+
+  const modeLabels = {};
+  Object.entries(stats.by_mode || {}).forEach(([k, v]) => { modeLabels[modeLabel(k)] = v; });
+
+  const html = `
+    <div class="section-title">Обзор за период</div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Всего вопросов</div>
+        <div class="stat-value">${stats.total_questions}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Отвечено из базы знаний</div>
+        <div class="stat-value">${stats.answered_pct}%</div>
+        <div class="stat-sub">${stats.answered_count} из ${stats.total_questions}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Не найдено в базе</div>
+        <div class="stat-value" style="color:var(--danger)">${stats.off_topic_count}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Обезличено запросов</div>
+        <div class="stat-value" style="color:var(--success)">${stats.anonymized_count}</div>
+      </div>
+    </div>
+
+    <div class="section-title">Динамика использования</div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-title">Вопросы по дням</div>
+        <div class="chart-wrap"><canvas id="chartTimeseries"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">По моделям</div>
+        <div class="chart-wrap"><canvas id="chartModels"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-title">Режимы и источники</div>
+    <div class="grid-3">
+      <div class="panel">
+        <div class="panel-title">По режимам работы</div>
+        <div class="chart-wrap small"><canvas id="chartModes"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">База знаний по источникам</div>
+        <div class="chart-wrap small"><canvas id="chartSources"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Топ цитируемых документов</div>
+        ${topDocs && topDocs.top_documents && topDocs.top_documents.length
+          ? renderBarsHtml(Object.fromEntries(topDocs.top_documents.map(d => [d.title, d.count])), topDocs.top_documents[0].count)
+          : '<div class="empty-note">Пока нет данных</div>'}
+      </div>
+    </div>
+
+    <div class="section-title">Вопросы без ответа (кандидаты на пополнение базы знаний)</div>
+    <div class="panel">
+      <div class="off-topic-list">
+        ${stats.off_topic_questions && stats.off_topic_questions.length
+          ? stats.off_topic_questions.map(q => `<div class="off-topic-item">${escapeHtml(q)}</div>`).join('')
+          : '<div class="empty-note">За этот период всё найдено — отлично!</div>'}
+      </div>
+    </div>
+
+    <div class="section-title">Последние диалоги</div>
+    <div class="panel" style="padding:0; overflow-x:auto;">
+      <table>
+        <tr><th>Время</th><th>Пользователь</th><th>Вопрос</th><th>Режим</th><th>Модель</th><th>Итог</th></tr>
+        ${logs && logs.logs && logs.logs.length ? logs.logs.map(l => `
+          <tr>
+            <td style="white-space:nowrap; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-muted);">${formatDate(l.created_at)}</td>
+            <td>${escapeHtml(l.user_name)}</td>
+            <td class="q-cell">${escapeHtml(l.question)}</td>
+            <td>${modeLabel(l.mode)}</td>
+            <td>${escapeHtml(l.model_used)}</td>
+            <td>${l.is_off_topic ? '<span class="badge miss">Не найдено</span>' : '<span class="badge ok">Отвечено</span>'}</td>
+          </tr>
+        `).join('') : '<tr><td colspan="6"><div class="empty-note">Логов пока нет</div></td></tr>'}
+      </table>
+    </div>
+  `;
+  document.getElementById('content').innerHTML = html;
+
+  // ===== Графики =====
+  destroyChart('ts'); destroyChart('models'); destroyChart('modes'); destroyChart('sources');
+
+  if (timeseries && timeseries.labels && timeseries.labels.length) {
+    charts.ts = new Chart(document.getElementById('chartTimeseries'), {
+      type: 'line',
+      data: {
+        labels: timeseries.labels.map(formatDayLabel),
+        datasets: [
+          { label: 'Всего вопросов', data: timeseries.total, borderColor: '#3b4cf0', backgroundColor: 'rgba(59,76,240,0.08)', fill: true, tension: 0.3 },
+          { label: 'Отвечено', data: timeseries.answered, borderColor: '#1f9d55', backgroundColor: 'rgba(31,157,85,0.06)', fill: true, tension: 0.3 },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    });
+  } else {
+    document.getElementById('chartTimeseries').parentElement.innerHTML = '<div class="empty-note">Пока недостаточно данных для графика</div>';
+  }
+
+  const modelEntries = Object.entries(stats.by_model || {});
+  if (modelEntries.length) {
+    charts.models = new Chart(document.getElementById('chartModels'), {
+      type: 'doughnut',
+      data: { labels: modelEntries.map(e => e[0]), datasets: [{ data: modelEntries.map(e => e[1]), backgroundColor: CHART_COLORS }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } } }
+    });
+  } else {
+    document.getElementById('chartModels').parentElement.innerHTML = '<div class="empty-note">Нет данных</div>';
+  }
+
+  const modeEntries = Object.entries(modeLabels);
+  if (modeEntries.length) {
+    charts.modes = new Chart(document.getElementById('chartModes'), {
+      type: 'doughnut',
+      data: { labels: modeEntries.map(e => e[0]), datasets: [{ data: modeEntries.map(e => e[1]), backgroundColor: CHART_COLORS }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
+    });
+  } else {
+    document.getElementById('chartModes').parentElement.innerHTML = '<div class="empty-note">Нет данных</div>';
+  }
+
+  const sourceEntries = Object.entries((sources && sources.sources) || {});
+  if (sourceEntries.length) {
+    charts.sources = new Chart(document.getElementById('chartSources'), {
+      type: 'doughnut',
+      data: { labels: sourceEntries.map(e => e[0]), datasets: [{ data: sourceEntries.map(e => e[1]), backgroundColor: CHART_COLORS }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
+    });
+  } else {
+    document.getElementById('chartSources').parentElement.innerHTML = '<div class="empty-note">Нет данных</div>';
+  }
+}
+
+document.getElementById('periodSelect').addEventListener('change', render);
+render();
+</script>
+</body>
+</html>

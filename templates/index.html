@@ -157,10 +157,66 @@
   .send-btn:hover { background: #232323; }
   .send-btn .flag { width: 10px; height: 10px; background: var(--accent); clip-path: polygon(30% 0%, 100% 0%, 70% 100%, 0% 100%); }
   .input-meta { font-size: 10.5px; color: var(--text-muted); margin-top: 8px; font-family: 'JetBrains Mono', monospace; }
+
+  /* ===== LOGIN SCREEN ===== */
+  #loginScreen {
+    display: none;
+    position: fixed; inset: 0; background: var(--ink); align-items: center; justify-content: center; z-index: 100;
+  }
+  .login-card { width: 340px; text-align: center; }
+  .login-card img { height: 30px; margin-bottom: 28px; }
+  .login-card h1 { font-family: 'Space Grotesk', sans-serif; font-size: 17px; color: #fff; font-weight: 600; margin-bottom: 6px; }
+  .login-card p { font-size: 12.5px; color: var(--ink-muted); margin-bottom: 26px; }
+  .login-field { text-align: left; margin-bottom: 12px; }
+  .login-field label { font-size: 11px; color: var(--ink-muted); display: block; margin-bottom: 5px; }
+  .login-field input {
+    width: 100%; height: 40px; border-radius: 9px; border: 1px solid var(--ink-line);
+    background: #131315; color: #fff; padding: 0 13px; font-size: 13.5px; font-family: 'Inter', sans-serif; outline: none;
+  }
+  .login-field input:focus { border-color: var(--accent); }
+  .login-btn {
+    width: 100%; height: 42px; border-radius: 9px; border: none; background: var(--accent);
+    color: #fff; font-size: 13.5px; font-weight: 600; cursor: pointer; margin-top: 8px; font-family: 'Inter', sans-serif;
+  }
+  .login-btn:hover { background: #2f3fd6; }
+  .login-error { color: #ff6b5e; font-size: 12px; margin-top: 12px; min-height: 16px; }
+  .app-shell { display: none; }
+  .app-shell.show { display: flex; width: 100%; height: 100%; }
+  .user-badge {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px; margin: 6px 10px 0;
+    border-top: 1px solid var(--ink-line); padding-top: 12px;
+  }
+  .user-badge-avatar {
+    width: 26px; height: 26px; border-radius: 7px; background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0;
+  }
+  .user-badge-name { font-size: 12.5px; color: #e8e7e3; font-weight: 500; }
+  .user-badge-role { font-size: 10.5px; color: var(--ink-muted); }
+  .logout-btn { margin-left: auto; background: none; border: none; color: var(--ink-muted); cursor: pointer; font-size: 12px; }
+  .logout-btn:hover { color: var(--danger); }
 </style>
 </head>
 <body>
 
+<div id="loginScreen">
+  <div class="login-card">
+    <img src="/static/logo.png" alt="Райтек">
+    <h1>ИИ-ассистент</h1>
+    <p>Войдите чтобы продолжить</p>
+    <div class="login-field">
+      <label>Логин</label>
+      <input type="text" id="loginUsername" onkeydown="if(event.key==='Enter') document.getElementById('loginPassword').focus()">
+    </div>
+    <div class="login-field">
+      <label>Пароль</label>
+      <input type="password" id="loginPassword" onkeydown="if(event.key==='Enter') doLogin()">
+    </div>
+    <button class="login-btn" onclick="doLogin()">Войти</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<div class="app-shell" id="appShell">
 <div class="sidebar">
   <div class="sidebar-logo">
     <img src="/static/logo.png" alt="Райтек">
@@ -170,6 +226,17 @@
     <span class="flag"></span> Новый чат
   </button>
   <div class="chat-list" id="chatList"></div>
+  <a href="/admin" id="adminLink" style="display:none; margin: 0 10px 8px; padding: 9px 12px; border-radius: 9px; font-size: 12.5px; color: #d5d4cf; text-decoration: none; border: 1px solid var(--ink-line); align-items: center; gap: 8px;">
+    <span class="flag"></span> Админ-панель
+  </a>
+  <div class="user-badge">
+    <div class="user-badge-avatar" id="userAvatar">?</div>
+    <div>
+      <div class="user-badge-name" id="userName">—</div>
+      <div class="user-badge-role" id="userRole">—</div>
+    </div>
+    <button class="logout-btn" onclick="doLogout()">Выйти</button>
+  </div>
   <div class="sidebar-footer">КОРП СТП · Корпоративная база знаний</div>
 </div>
 
@@ -180,6 +247,11 @@
       <div class="topbar-sub">Внутренний ИИ-ассистент по базе знаний</div>
     </div>
     <div class="topbar-controls">
+      <select id="modeSelect" class="model-select">
+        <option value="kb_only">Строго по базе знаний</option>
+        <option value="combined">Комбинированный</option>
+        <option value="external">Внешняя LLM</option>
+      </select>
       <select id="modelSelect" class="model-select">
         <option value="gigachat">GigaChat</option>
         <option value="qwen">Qwen</option>
@@ -205,6 +277,7 @@
     </div>
     <div class="input-meta" id="inputMeta">GigaChat · КОРП СТП + Корпоративная база знаний</div>
   </div>
+</div>
 </div>
 
 <script>
@@ -315,13 +388,14 @@ function renderBotMsg(text, sources, debug, modelUsed) {
     }).join('') + '</div>';
   }
   let modelTag = modelUsed ? `<div class="model-tag">${escapeHtml(modelUsed)}</div>` : '';
+  let anonTag = (debug && debug.anonymization_applied) ? `<div class="model-tag" style="color:var(--success)">🔒 обезличено перед отправкой</div>` : '';
   let debugHtml = '';
   const debugOn = document.getElementById('debugMode').checked;
   if (debugOn && debug) {
     const debugId = 'debug-' + Date.now() + Math.random().toString(36).slice(2);
     debugHtml = `<div class="debug-link" onclick="document.getElementById('${debugId}').classList.toggle('show')">Показать путь обработки</div><div class="debug-panel" id="${debugId}">${escapeHtml(JSON.stringify(debug, null, 2))}</div>`;
   }
-  div.innerHTML = `<div class="avatar bot"><span class="flag"></span></div><div>${modelTag}<div class="bubble bot">${escapeHtml(text)}</div>${sourcesHtml}${debugHtml}</div>`;
+  div.innerHTML = `<div class="avatar bot"><span class="flag"></span></div><div>${modelTag}${anonTag}<div class="bubble bot">${escapeHtml(text)}</div>${sourcesHtml}${debugHtml}</div>`;
   return div;
 }
 
@@ -360,6 +434,7 @@ async function sendMessage() {
       body: JSON.stringify({
         question,
         model: document.getElementById('modelSelect').value,
+        mode: document.getElementById('modeSelect').value,
         history,
         file_text: attachedFile ? attachedFile.text : null
       })
@@ -424,10 +499,12 @@ function updateFilePreview() {
 }
 
 function updateInputMeta() {
-  const select = document.getElementById('modelSelect');
+  const modelSel = document.getElementById('modelSelect');
+  const modeSel = document.getElementById('modeSelect');
   const meta = document.getElementById('inputMeta');
-  const update = () => { meta.textContent = `${select.options[select.selectedIndex].text} · КОРП СТП + Корпоративная база знаний`; };
-  select.addEventListener('change', update);
+  const update = () => { meta.textContent = `${modelSel.options[modelSel.selectedIndex].text} · ${modeSel.options[modeSel.selectedIndex].text}`; };
+  modelSel.addEventListener('change', update);
+  modeSel.addEventListener('change', update);
   update();
 }
 
@@ -437,7 +514,69 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-init();
+async function checkSession() {
+  try {
+    const res = await fetch('/api/session');
+    const data = await res.json();
+    if (data.authenticated) {
+      showApp(data);
+    } else {
+      document.getElementById('loginScreen').style.display = 'flex';
+    }
+  } catch (e) {
+    document.getElementById('loginScreen').style.display = 'flex';
+  }
+}
+
+function showApp(userData) {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appShell').classList.add('show');
+  document.getElementById('userName').textContent = userData.display_name;
+  document.getElementById('userRole').textContent = userData.role === 'admin' ? 'Администратор' : 'Пользователь';
+  document.getElementById('userAvatar').textContent = userData.display_name.slice(0, 2).toUpperCase();
+  if (userData.role === 'admin') {
+    document.getElementById('adminLink').style.display = 'flex';
+  }
+  init();
+}
+
+async function doLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errorEl = document.getElementById('loginError');
+  errorEl.textContent = '';
+
+  if (!username || !password) {
+    errorEl.textContent = 'Введите логин и пароль';
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (data.error) {
+      errorEl.textContent = data.error;
+      return;
+    }
+    showApp(data);
+  } catch (e) {
+    errorEl.textContent = 'Не удалось связаться с сервером';
+  }
+}
+
+async function doLogout() {
+  await fetch('/api/logout', { method: 'POST' });
+  document.getElementById('appShell').classList.remove('show');
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPassword').value = '';
+}
+
+checkSession();
 </script>
 </body>
 </html>
