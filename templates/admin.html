@@ -154,12 +154,13 @@ function renderBarsHtml(dict, total) {
 
 async function render() {
   const days = document.getElementById('periodSelect').value;
-  const [stats, logs, sources, timeseries, topDocs] = await Promise.all([
+  const [stats, logs, sources, timeseries, topDocs, feedbackStats] = await Promise.all([
     apiGet(`/api/admin/stats?days=${days}`),
     apiGet('/api/admin/logs?limit=50'),
     apiGet('/api/admin/sources'),
     apiGet(`/api/admin/timeseries?days=${days}`),
     apiGet(`/api/admin/top_documents?days=${days}`),
+    apiGet(`/api/admin/feedback_stats?days=${days}`),
   ]);
 
   if (stats === 'forbidden' || stats === null) {
@@ -220,6 +221,44 @@ async function render() {
           ? renderBarsHtml(Object.fromEntries(topDocs.top_documents.map(d => [d.title, d.count])), topDocs.top_documents[0].count)
           : '<div class="empty-note">Пока нет данных</div>'}
       </div>
+    </div>
+
+    <div class="section-title">Обратная связь пользователей (👍/👎)</div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Всего оценок</div>
+        <div class="stat-value">${feedbackStats ? feedbackStats.total : 0}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Положительных (👍)</div>
+        <div class="stat-value" style="color:var(--success)">${feedbackStats ? feedbackStats.up_pct : 0}%</div>
+        <div class="stat-sub">${feedbackStats ? feedbackStats.up_count : 0} из ${feedbackStats ? feedbackStats.total : 0}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Отрицательных (👎)</div>
+        <div class="stat-value" style="color:var(--danger)">${feedbackStats ? feedbackStats.down_count : 0}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Активных исправлений</div>
+        <div class="stat-value">${feedbackStats ? feedbackStats.corrections_active : 0}</div>
+        <div class="stat-sub">учитываются в будущих ответах</div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:14px;">
+      <div class="panel-title">Последние дизлайки</div>
+      ${feedbackStats && feedbackStats.recent_down && feedbackStats.recent_down.length ? `
+        <table>
+          <tr><th>Вопрос</th><th>Ответ (начало)</th><th>Исправление</th><th>Кто</th></tr>
+          ${feedbackStats.recent_down.map(f => `
+            <tr>
+              <td class="q-cell">${escapeHtml(f.question)}</td>
+              <td class="q-cell">${escapeHtml(f.answer)}...</td>
+              <td class="q-cell">${f.correction ? escapeHtml(f.correction) : '<span style="color:var(--text-muted)">не указано</span>'}</td>
+              <td>${escapeHtml(f.user_name || '—')}</td>
+            </tr>
+          `).join('')}
+        </table>
+      ` : '<div class="empty-note">Дизлайков за этот период пока нет</div>'}
     </div>
 
     <div class="section-title">Вопросы без ответа (кандидаты на пополнение базы знаний)</div>

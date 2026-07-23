@@ -3,6 +3,7 @@ supabase
 gigachat
 gunicorn
 requests
-pypdf
+pdfplumber
 python-docx
 werkzeug
+sentence-transformers
