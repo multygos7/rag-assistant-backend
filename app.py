@@ -19,6 +19,9 @@ from gigachat.models import Chat, Messages, MessagesRole
 import requests
 import io
 import re
+import threading
+import uuid
+import os as _os
 import pdfplumber
 from docx import Document as DocxDocument
 from docx.table import Table as DocxTable
@@ -39,6 +42,12 @@ OPENROUTER_MODELS = {
     "llama": "meta-llama/llama-3.3-70b-instruct:free",
     "gpt_oss": "openai/gpt-oss-20b:free",
 }
+
+# On-prem режим — локальная LLM (например Ollama) внутри контура заказчика,
+# данные никуда не уходят в облако. Настраивается адресом сервера клиента,
+# по умолчанию не активна пока явно не укажут адрес через переменную окружения.
+OLLAMA_URL = _os.environ.get("OLLAMA_URL")  # например: http://192.168.1.50:11434
+OLLAMA_MODEL = _os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 
 MIN_RANK = 0.01
 
@@ -107,7 +116,6 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Render убивает процесс на уровне ОС, а не через Python-исключение.
 # Локально (где памяти достаточно) включай через переменную окружения:
 #   ENABLE_SEMANTIC_SEARCH=true python3 app.py
-import os as _os
 ENABLE_SEMANTIC_SEARCH = _os.environ.get("ENABLE_SEMANTIC_SEARCH", "false").lower() == "true"
 
 EMBEDDING_MODEL = None
@@ -278,9 +286,30 @@ def ask_openrouter(prompt, model_id, retries=1):
     raise Exception(f"OpenRouter error: {last_error}")
 
 
+def ask_ollama(prompt, timeout=60):
+    """Отправляем запрос в локальную LLM (Ollama) внутри контура заказчика —
+    данные никуда не уходят в облако. Требует настроенный OLLAMA_URL
+    (адрес сервера клиента внутри его собственной сети)."""
+    response = requests.post(
+        f"{OLLAMA_URL}/api/chat",
+        json={
+            "model": OLLAMA_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+        },
+        timeout=timeout
+    )
+    data = response.json()
+    return data["message"]["content"], f"Ollama ({OLLAMA_MODEL}, on-prem)"
+
+
 def ask_llm(giga, prompt, model_choice):
     """Единая обёртка — отправляет промпт в выбранную модель.
     Возвращает (текст_ответа, реальное_название_модели_ответившей)."""
+    if model_choice == "ollama":
+        if not OLLAMA_URL:
+            raise Exception("On-prem режим не настроен: не указан адрес сервера (переменная OLLAMA_URL)")
+        return ask_ollama(prompt)
     if model_choice in OPENROUTER_MODELS:
         return ask_openrouter(prompt, OPENROUTER_MODELS[model_choice])
     chat = Chat(messages=[Messages(role=MessagesRole.USER, content=prompt)])
@@ -649,6 +678,32 @@ def admin_required(f):
     return decorated
 
 
+def api_key_required(f):
+    """Проверка доступа для ВНЕШНИХ систем (не людей) — по постоянному ключу
+    в заголовке X-API-Key, а не через логин/сессию в браузере."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        api_key = request.headers.get("X-API-Key")
+        if not api_key:
+            return jsonify({"error": "Не передан заголовок X-API-Key"}), 401
+        try:
+            result = supabase.table("api_keys").select("*").eq("api_key", api_key).eq("active", True).execute()
+        except Exception:
+            return jsonify({"error": "Ошибка проверки ключа"}), 500
+        if not result.data:
+            return jsonify({"error": "Неверный или отключённый API-ключ"}), 403
+
+        try:
+            from datetime import datetime, timezone
+            supabase.table("api_keys").update({"last_used_at": datetime.now(timezone.utc).isoformat()}).eq("api_key", api_key).execute()
+        except Exception:
+            pass
+
+        request.api_system_name = result.data[0]["system_name"]
+        return f(*args, **kwargs)
+    return decorated
+
+
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
@@ -825,6 +880,104 @@ def ask_about_document():
         return jsonify({"answer": answer, "sources": sources, "off_topic": False, "model_used": actual_model})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
+# API для внешних систем (например "Агент поддержки 1С")
+# Авторизация — по постоянному ключу в заголовке X-API-Key,
+# а не через логин/пароль человека
+# ============================================================
+
+@app.route("/api/v1/ask", methods=["POST"])
+@api_key_required
+def api_v1_ask_sync():
+    """СИНХРОННЫЙ режим — внешняя система ждёт готовый ответ в этом же запросе.
+    Подходит когда вызывающая сторона может подождать (обычно до пары минут)."""
+    data = request.get_json() or {}
+    question = (data.get("question") or "").strip()
+    model_choice = data.get("model", "llama")
+    mode = data.get("mode", "kb_only")
+
+    if not question:
+        return jsonify({"error": "Пустой вопрос"}), 400
+
+    try:
+        result = answer_question(question, model_choice, mode=mode)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _process_job_in_background(job_id, question, model_choice, mode):
+    """Выполняется в отдельном потоке — не блокирует ответ вызывающей системе."""
+    try:
+        result = answer_question(question, model_choice, mode=mode)
+        from datetime import datetime, timezone
+        supabase.table("api_jobs").update({
+            "status": "done",
+            "result": result,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("job_id", job_id).execute()
+    except Exception as e:
+        from datetime import datetime, timezone
+        supabase.table("api_jobs").update({
+            "status": "error",
+            "error_message": str(e),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("job_id", job_id).execute()
+
+
+@app.route("/api/v1/ask_async", methods=["POST"])
+@api_key_required
+def api_v1_ask_async():
+    """АСИНХРОННЫЙ режим — сразу возвращаем номер задачи (job_id), не дожидаясь ответа.
+    Внешняя система потом сама проверяет готовность через GET /api/v1/jobs/<job_id>."""
+    data = request.get_json() or {}
+    question = (data.get("question") or "").strip()
+    model_choice = data.get("model", "llama")
+    mode = data.get("mode", "kb_only")
+
+    if not question:
+        return jsonify({"error": "Пустой вопрос"}), 400
+
+    job_id = uuid.uuid4().hex
+
+    try:
+        supabase.table("api_jobs").insert({
+            "job_id": job_id,
+            "system_name": getattr(request, "api_system_name", None),
+            "question": question,
+            "status": "pending",
+        }).execute()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    thread = threading.Thread(target=_process_job_in_background, args=(job_id, question, model_choice, mode))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({"job_id": job_id, "status": "pending"}), 202
+
+
+@app.route("/api/v1/jobs/<job_id>", methods=["GET"])
+@api_key_required
+def api_v1_job_status(job_id):
+    """Проверка готовности асинхронной задачи по её job_id."""
+    try:
+        result = supabase.table("api_jobs").select("*").eq("job_id", job_id).execute()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    if not result.data:
+        return jsonify({"error": "Задача не найдена"}), 404
+
+    job = result.data[0]
+    response = {"job_id": job_id, "status": job["status"]}
+    if job["status"] == "done":
+        response["result"] = job["result"]
+    elif job["status"] == "error":
+        response["error"] = job["error_message"]
+    return jsonify(response)
 
 
 @app.route("/api/upload", methods=["POST"])
