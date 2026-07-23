@@ -23,7 +23,9 @@ import pdfplumber
 from docx import Document as DocxDocument
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph as DocxParagraph
-from sentence_transformers import SentenceTransformer
+# sentence_transformers НЕ импортируем здесь на уровне модуля — сам импорт тянет
+# PyTorch в память, даже если саму модель эмбеддингов не грузить. Импортируем
+# только внутри блока ниже, когда семантический поиск явно включён.
 
 # ==================== НАСТРОЙКИ ====================
 SUPABASE_URL = "https://jidtwjamnglkqoqizvjl.supabase.co"
@@ -98,14 +100,28 @@ app = Flask(__name__)
 app.secret_key = "raytec-rag-mvp-secret-key-change-in-prod-2026"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Модель для семантического поиска (эмбеддинги) — грузим один раз при старте сервера
-print("Загружаю модель эмбеддингов...")
-try:
-    EMBEDDING_MODEL = SentenceTransformer("sergeyzh/rubert-tiny-lite")
-    print("Модель эмбеддингов загружена.")
-except Exception as e:
-    EMBEDDING_MODEL = None
-    print(f"Не удалось загрузить модель эмбеддингов: {e}")
+# Модель для семантического поиска (эмбеддинги) — опционально, управляется переменной
+# окружения. По умолчанию ВЫКЛЮЧЕНА: sentence-transformers тянет за собой PyTorch,
+# который сам по себе занимает больше памяти чем есть на бесплатном тарифе Render (512МБ)
+# и вызывает аварийную остановку процесса (OOM) — try/except тут не спасает, так как
+# Render убивает процесс на уровне ОС, а не через Python-исключение.
+# Локально (где памяти достаточно) включай через переменную окружения:
+#   ENABLE_SEMANTIC_SEARCH=true python3 app.py
+import os as _os
+ENABLE_SEMANTIC_SEARCH = _os.environ.get("ENABLE_SEMANTIC_SEARCH", "false").lower() == "true"
+
+EMBEDDING_MODEL = None
+if ENABLE_SEMANTIC_SEARCH:
+    print("Загружаю модель эмбеддингов...")
+    try:
+        from sentence_transformers import SentenceTransformer
+        EMBEDDING_MODEL = SentenceTransformer("sergeyzh/rubert-tiny-lite")
+        print("Модель эмбеддингов загружена.")
+    except Exception as e:
+        EMBEDDING_MODEL = None
+        print(f"Не удалось загрузить модель эмбеддингов: {e}")
+else:
+    print("Семантический поиск отключён (ENABLE_SEMANTIC_SEARCH не установлена) — работает точный + нечёткий поиск.")
 
 MAX_FILE_TEXT_CHARS = 12000  # ограничиваем объём текста из файла, чтобы не раздувать промпт
 
