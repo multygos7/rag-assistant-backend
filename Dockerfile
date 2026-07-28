@@ -14,4 +14,4 @@ COPY . .
 
 EXPOSE 40010
 
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:40010", "--timeout", "120"]
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:40010", "--timeout", "180", "--workers", "3"]
