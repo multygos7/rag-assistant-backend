@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  rag-assistant:
+    build: .
+    container_name: rag-assistant
+    restart: always
+    ports:
+      - "40010:40010"
+    environment:
+      # На этом сервере памяти достаточно (16ГБ+) — включаем семантический поиск,
+      # на Render его отключали из-за лимита в 512МБ
+      - ENABLE_SEMANTIC_SEARCH=true
